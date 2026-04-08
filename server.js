@@ -44,18 +44,26 @@ let db;
 
 async function connectDB() {
   try {
-    db = await mysql.createPool({
-      host              : process.env.DB_HOST     || 'localhost',
-      user              : process.env.DB_USER     || 'root',
-      password          : process.env.DB_PASSWORD || '',
-      database          : process.env.DB_NAME     || 'onix_db',
+    const connectionConfig = process.env.MYSQL_URL || process.env.DATABASE_URL ? {
+      uri: process.env.MYSQL_URL || process.env.DATABASE_URL,
       waitForConnections: true,
-      connectionLimit   : 10,
-      charset           : 'utf8mb4'
-    });
+      connectionLimit: 10,
+      charset: 'utf8mb4'
+    } : {
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'onix_db',
+      waitForConnections: true,
+      connectionLimit: 10,
+      charset: 'utf8mb4'
+    };
+
+    db = await mysql.createPool(connectionConfig);
+    
     // Test connection
     await db.query('SELECT 1');
-    console.log('✅  MySQL connected to database:', process.env.DB_NAME || 'onix_db');
+    console.log('✅  MySQL connected successfully');
     await seedAdmin();
   } catch (err) {
     console.error('❌  MySQL connection failed:', err.message);
