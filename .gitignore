@@ -1,10 +1,6 @@
 node_modules/
 .env
 *.log
-onix_db_backup.sql/
-*.sql
-.gemini/
-.DS_Store
 public/uploads/
 public/videos/
 public/images/team/

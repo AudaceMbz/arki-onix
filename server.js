@@ -17,6 +17,8 @@ const bcrypt     = require('bcryptjs');
 const path       = require('path');
 const fs         = require('fs');
 const cors       = require('cors');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -44,26 +46,19 @@ let db;
 
 async function connectDB() {
   try {
-    const connectionConfig = process.env.MYSQL_URL || process.env.DATABASE_URL ? {
-      uri: process.env.MYSQL_URL || process.env.DATABASE_URL,
+    db = await mysql.createPool({
+      host              : process.env.DB_HOST     || 'localhost',
+      user              : process.env.DB_USER     || 'root',
+      password          : process.env.DB_PASSWORD || '',
+      database          : process.env.DB_NAME     || 'onix_db',
       waitForConnections: true,
-      connectionLimit: 10,
-      charset: 'utf8mb4'
-    } : {
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'onix_db',
-      waitForConnections: true,
-      connectionLimit: 10,
-      charset: 'utf8mb4'
-    };
-
-    db = await mysql.createPool(connectionConfig);
+      connectionLimit   : 10,
+      charset           : 'utf8mb4'
+    });
     
     // Test connection
     await db.query('SELECT 1');
-    console.log('✅  MySQL connected successfully');
+    console.log('✅  MySQL connected to database:', process.env.DB_NAME || 'onix_db');
     await seedAdmin();
   } catch (err) {
     console.error('❌  MySQL connection failed:', err.message);
@@ -90,23 +85,35 @@ async function seedAdmin() {
 }
 
 // ─── Multer — File Upload Setup ───────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const typeMap = {
-      project : 'public/images/projects',
-      team    : 'public/images/team',
-      video   : 'public/videos',
-      logo    : 'public/images'
-    };
-    const dest = typeMap[req.body.upload_type] || 'public/uploads';
-    fs.mkdirSync(dest, { recursive: true });
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1000)}${ext}`);
-  }
-});
+let storage;
+if (process.env.CLOUDINARY_URL) {
+  storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+      folder: 'onix_uploads',
+      resource_type: 'auto',
+      allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'svg']
+    }
+  });
+} else {
+  storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const typeMap = {
+        project : 'public/images/projects',
+        team    : 'public/images/team',
+        video   : 'public/videos',
+        logo    : 'public/images'
+      };
+      const dest = typeMap[req.body.upload_type] || 'public/uploads';
+      fs.mkdirSync(dest, { recursive: true });
+      cb(null, dest);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${Math.round(Math.random() * 1000)}${ext}`);
+    }
+  });
+}
 
 const upload = multer({
   storage,
@@ -192,13 +199,17 @@ app.post('/api/admin/settings', requireAuth, requireDB, upload.single('file'), a
     let value = setting_value;
 
     if (req.file) {
-      const pathMap = {
-        video   : '/videos/'           + req.file.filename,
-        logo    : '/images/'           + req.file.filename,
-        project : '/images/projects/'  + req.file.filename,
-        team    : '/images/team/'      + req.file.filename
-      };
-      value = pathMap[upload_type] || '/uploads/' + req.file.filename;
+      if (req.file.path && req.file.path.startsWith('http')) {
+        value = req.file.path;
+      } else {
+        const pathMap = {
+          video   : '/videos/'           + req.file.filename,
+          logo    : '/images/'           + req.file.filename,
+          project : '/images/projects/'  + req.file.filename,
+          team    : '/images/team/'      + req.file.filename
+        };
+        value = pathMap[upload_type] || '/uploads/' + req.file.filename;
+      }
     }
 
     await db.query(
@@ -246,7 +257,7 @@ app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), 
     const { title, category, description, display_order, target_page } = req.body;
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
-    const image_path = req.file ? '/images/projects/' + req.file.filename : '';
+    const image_path = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename) : '';
     const [result] = await db.query(
       'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES (?,?,?,?,?,?)',
       [title, category || 'Architecture', description || '', image_path, display_order || 0, target_page || 'both']
@@ -262,7 +273,7 @@ app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'
     console.log(`[PUT] /api/admin/projects/${req.params.id}`, req.body);
     const { title, category, description, display_order, is_active, target_page } = req.body;
     const updates = { title, category, description, display_order, is_active, target_page };
-    if (req.file) updates.image_path = '/images/projects/' + req.file.filename;
+    if (req.file) updates.image_path = req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename;
 
     const keys   = Object.keys(updates).filter(k => updates[k] !== undefined);
     const values = keys.map(k => updates[k]);
@@ -365,7 +376,7 @@ app.get('/api/team', requireDB, async (req, res) => {
 app.post('/api/admin/team', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
     const { name, role, display_order } = req.body;
-    const image_path = req.file ? '/images/team/' + req.file.filename : '';
+    const image_path = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/images/team/' + req.file.filename) : '';
     const [r] = await db.query(
       'INSERT INTO team_photos (name, role, image_path, display_order) VALUES (?,?,?,?)',
       [name || '', role || '', image_path, display_order || 0]
@@ -380,7 +391,7 @@ app.put('/api/admin/team/:id', requireAuth, requireDB, upload.single('image'), a
   try {
     const { name, role, display_order, is_active } = req.body;
     const updates = { name, role, display_order, is_active };
-    if (req.file) updates.image_path = '/images/team/' + req.file.filename;
+    if (req.file) updates.image_path = req.file.path.startsWith('http') ? req.file.path : '/images/team/' + req.file.filename;
 
     const keys   = Object.keys(updates).filter(k => updates[k] !== undefined);
     const values = [...keys.map(k => updates[k]), req.params.id];
