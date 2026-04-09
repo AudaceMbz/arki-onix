@@ -51,9 +51,13 @@ async function connectDB() {
       user              : process.env.DB_USER     || 'root',
       password          : process.env.DB_PASSWORD || '',
       database          : process.env.DB_NAME     || 'onix_db',
+      port              : process.env.DB_PORT     || 3306,
       waitForConnections: true,
       connectionLimit   : 10,
-      charset           : 'utf8mb4'
+      charset           : 'utf8mb4',
+      ssl               : process.env.DB_HOST && process.env.DB_HOST.includes('aivencloud.com')
+                            ? { rejectUnauthorized: false }
+                            : undefined
     });
     
     // Test connection
