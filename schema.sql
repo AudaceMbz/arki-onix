@@ -1,14 +1,7 @@
-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz -- ═══════════════════════════════════════════════════════════════
---  ONIX ARCHITECTURE — MySQL Database Schema
---  Run this file in MySQL Workbench or via: mysql -u root -p < schema.sql
 -- ═══════════════════════════════════════════════════════════════
-
--- 1. Create & use the database
-CREATE DATABASE IF NOT EXISTS onyx_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE onyx_db;
+--  ONIX ARCHITECTURE — MySQL Database Schema  (Aiven / defaultdb)
+--  Paste this entire file into Aiven's Query editor and run it.
+-- ═══════════════════════════════════════════════════════════════
 
 -- ─── TABLE: admins ───────────────────────────────────────────────────────────
 -- Stores admin login credentials (password is bcrypt-hashed)
@@ -37,6 +30,7 @@ CREATE TABLE IF NOT EXISTS projects (
   description   TEXT,
   image_path    VARCHAR(500),
   display_order INT DEFAULT 0,
+  target_page   VARCHAR(20) DEFAULT 'both',
   is_active     TINYINT(1) DEFAULT 1,
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
@@ -47,7 +41,7 @@ CREATE TABLE IF NOT EXISTS services (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   title         VARCHAR(255) NOT NULL,
   description   TEXT,
-  icon          VARCHAR(100),              -- e.g. 'building', 'layout', 'leaf'
+  icon          VARCHAR(100),
   display_order INT DEFAULT 0,
   is_active     TINYINT(1) DEFAULT 1
 ) ENGINE=InnoDB;
@@ -66,15 +60,15 @@ CREATE TABLE IF NOT EXISTS team_photos (
 -- ─── TABLE: workshops ────────────────────────────────────────────────────────
 -- Stores training workshops with 3 collapsible dropdown sections each
 CREATE TABLE IF NOT EXISTS workshops (
-  id                INT AUTO_INCREMENT PRIMARY KEY,
-  title             VARCHAR(255) NOT NULL,
-  description       TEXT,
-  learn_more        TEXT,           -- "Learn from the best in the industry"
-  our_speakers      TEXT,           -- "Our speakers"
-  business_knowledge TEXT,          -- "Improve your business knowledge"
-  date_label        VARCHAR(100),
-  display_order     INT DEFAULT 0,
-  is_active         TINYINT(1) DEFAULT 1
+  id                 INT AUTO_INCREMENT PRIMARY KEY,
+  title              VARCHAR(255) NOT NULL,
+  description        TEXT,
+  learn_more         TEXT,
+  our_speakers       TEXT,
+  business_knowledge TEXT,
+  date_label         VARCHAR(100),
+  display_order      INT DEFAULT 0,
+  is_active          TINYINT(1) DEFAULT 1
 ) ENGINE=InnoDB;
 
 -- ─── TABLE: about_content ────────────────────────────────────────────────────
@@ -96,7 +90,7 @@ INSERT IGNORE INTO settings (setting_key, setting_value) VALUES
   ('hero_video_path', ''),
   ('hero_title',      'Architecture is Experience'),
   ('hero_subtitle',   'We craft spaces that transcend the ordinary — balancing material, light, and proportion into living art.'),
-  ('footer_text',     '© 2024 Onix Studio. All rights reserved.');
+  ('footer_text',     '© 2026 Onix Studio. All rights reserved.');
 
 -- Services
 INSERT IGNORE INTO services (title, description, icon, display_order) VALUES
@@ -137,12 +131,3 @@ INSERT IGNORE INTO workshops (title, description, learn_more, our_speakers, busi
     'Discover how sustainability is becoming a business differentiator — attracting clients, meeting regulations, and future-proofing your practice.',
     'Autumn 2026', 3
   );
-
--- Sample Projects (replace image_path once you upload real images via admin)
-INSERT IGNORE INTO projects (title, category, description, image_path, display_order) VALUES
-  ('The Glass Pavilion',   'Architecture',    'A transparent sanctuary immersed in nature — where boundaries between inside and outside dissolve.',   '/images/projects/project_01.jpg', 1),
-  ('Meridian House',       'Residential',     'A contemporary family home sculpted from concrete and warmth, designed for connection.',                 '/images/projects/project_02.jpg', 2),
-  ('The Cascade Stair',    'Interior Design', 'A floating staircase that becomes the soul of a luxury penthouse.',                                     '/images/projects/project_03.jpg', 3),
-  ('Luminary Tower',       'Commercial',      'An urban mixed-use development defining a new skyline landmark.',                                        '/images/projects/project_04.jpg', 4),
-  ('Serenity Suite',       'Interior Design', 'A private residence bedroom suite draped in natural textures and calm.',                                 '/images/projects/project_05.jpg', 5),
-  ('Courtyard Residence',  'Residential',     'A family home organized around a private courtyard, creating natural light and privacy in equal measure.','/images/projects/project_06.jpg', 6);

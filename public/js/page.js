@@ -404,6 +404,9 @@
     const fb = document.getElementById('form-feedback');
     if (!form) return;
 
+    // Ensure feedback is empty on load
+    if (fb) fb.textContent = '';
+
     form.addEventListener('submit', e => {
       e.preventDefault();
       const btn = document.getElementById('contact-submit');

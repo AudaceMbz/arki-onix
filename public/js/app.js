@@ -536,6 +536,9 @@
   function initContactForm() {
     const form = document.getElementById('contact-form');
     const fb = document.getElementById('form-feedback');
+    if (!form) return;
+
+    if (fb) fb.textContent = '';
 
     form.addEventListener('submit', async e => {
       e.preventDefault();

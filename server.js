@@ -63,11 +63,92 @@ async function connectDB() {
     // Test connection
     await db.query('SELECT 1');
     console.log('✅  MySQL connected to database:', process.env.DB_NAME || 'onix_db');
+    
+    // AUTO-INIT: Create tables if they don't exist
+    await initSchema();
     await seedAdmin();
   } catch (err) {
     console.error('❌  MySQL connection failed:', err.message);
     console.log('   → Make sure MySQL is running and .env credentials are correct.');
     db = null;
+  }
+}
+
+// ─── Initialize Database Schema ────────────────────────────────────────────────
+async function initSchema() {
+  console.log('🗂️  Initializing database schema...');
+  const tableQueries = [
+    `CREATE TABLE IF NOT EXISTS admins (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      username VARCHAR(100) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS settings (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      setting_key VARCHAR(100) NOT NULL UNIQUE,
+      setting_value TEXT,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS projects (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      category VARCHAR(100),
+      description TEXT,
+      image_path VARCHAR(500),
+      display_order INT DEFAULT 0,
+      target_page VARCHAR(20) DEFAULT 'both',
+      is_active TINYINT(1) DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS services (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      icon VARCHAR(100),
+      display_order INT DEFAULT 0,
+      is_active TINYINT(1) DEFAULT 1
+    ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS team_photos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255),
+      role VARCHAR(255),
+      image_path VARCHAR(500),
+      display_order INT DEFAULT 0,
+      is_active TINYINT(1) DEFAULT 1
+    ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS workshops (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      learn_more TEXT,
+      our_speakers TEXT,
+      business_knowledge TEXT,
+      date_label VARCHAR(100),
+      display_order INT DEFAULT 0,
+      is_active TINYINT(1) DEFAULT 1
+    ) ENGINE=InnoDB`,
+    `CREATE TABLE IF NOT EXISTS about_content (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      content_key VARCHAR(100) NOT NULL UNIQUE,
+      content_value LONGTEXT,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`
+  ];
+
+  try {
+    for (const query of tableQueries) {
+      await db.query(query);
+    }
+    console.log('✅  Database schema initialized / verified');
+
+    // Default settings seed
+    await db.query(`INSERT IGNORE INTO settings (setting_key, setting_value) VALUES
+      ('site_name', 'Onix Studio'),
+      ('hero_title', 'Architecture is Experience'),
+      ('footer_text', '© 2026 Onix Studio. All rights reserved.')`);
+  } catch (err) {
+    console.error('❌ Schema Init Error:', err.message);
   }
 }
 
