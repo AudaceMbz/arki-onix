@@ -103,6 +103,8 @@
       if (vid && brandVid && s.hero_video_path) {
         vid.src = s.hero_video_path;
         brandVid.load();
+        brandVid.muted = true; // Ensure muted for autoplay
+        brandVid.play().catch(e => console.warn("Autoplay prevented:", e));
       }
     } catch (e) { }
   }

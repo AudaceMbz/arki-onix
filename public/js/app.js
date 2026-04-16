@@ -162,6 +162,8 @@
       if (aboutVidSrc && aboutVid && s.hero_video_path) {
         aboutVidSrc.src = s.hero_video_path;
         aboutVid.load();
+        aboutVid.muted = true; // Ensure muted for autoplay
+        aboutVid.play().catch(e => console.warn("Autoplay prevented:", e));
       }
 
       if (s.hero_title) {
