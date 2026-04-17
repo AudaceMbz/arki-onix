@@ -1,16 +1,16 @@
 'use strict';
 // ═══════════════════════════════════════════════════════════════
-//  ONIX ARCHITECTURE — Node.js Backend Server
+//  ONIX ARCHITECTURE — Node.js Backend Server (PostgreSQL Version)
 //  Language : JavaScript (Node.js)
-//  Database : MySQL (via mysql2/promise)
+//  Database : PostgreSQL (via pg)
 //  Auth     : express-session + bcryptjs
-//  Uploads  : multer (local disk)
+//  Uploads  : multer (Cloudinary recommended for Render)
 // ═══════════════════════════════════════════════════════════════
 
 require('dotenv').config();
 
 const express    = require('express');
-const mysql      = require('mysql2/promise');
+const { Pool }   = require('pg');
 const multer     = require('multer');
 const session    = require('express-session');
 const bcrypt     = require('bcryptjs');
@@ -24,7 +24,7 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.set('trust proxy', 1); // Trust first proxy (Railway/Render/Heroku)
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -41,35 +41,35 @@ app.use(session({
   }
 }));
 
-// ─── MySQL Connection Pool ────────────────────────────────────────────────────
+// ─── PostgreSQL Connection Pool ───────────────────────────────────────────────
 let db;
 
 async function connectDB() {
   try {
-    db = await mysql.createPool({
-      host              : process.env.DB_HOST     || 'localhost',
-      user              : process.env.DB_USER     || 'root',
-      password          : process.env.DB_PASSWORD || '',
-      database          : process.env.DB_NAME     || 'onix_db',
-      port              : process.env.DB_PORT     || 3306,
-      waitForConnections: true,
-      connectionLimit   : 10,
-      charset           : 'utf8mb4',
-      ssl               : process.env.DB_HOST && process.env.DB_HOST.includes('aivencloud.com')
-                            ? { rejectUnauthorized: false }
-                            : undefined
-    });
+    const connectionConfig = process.env.DATABASE_URL 
+      ? { 
+          connectionString: process.env.DATABASE_URL,
+          ssl: { rejectUnauthorized: false } 
+        }
+      : {
+          host     : process.env.DB_HOST     || 'localhost',
+          user     : process.env.DB_USER     || 'postgres',
+          password : process.env.DB_PASSWORD || '',
+          database : process.env.DB_NAME     || 'onix_db',
+          port     : process.env.DB_PORT     || 5432,
+        };
+
+    db = new Pool(connectionConfig);
     
     // Test connection
     await db.query('SELECT 1');
-    console.log('✅  MySQL connected to database:', process.env.DB_NAME || 'onix_db');
+    console.log('✅  PostgreSQL connected');
     
     // AUTO-INIT: Create tables if they don't exist
     await initSchema();
     await seedAdmin();
   } catch (err) {
-    console.error('❌  MySQL connection failed:', err.message);
-    console.log('   → Make sure MySQL is running and .env credentials are correct.');
+    console.error('❌  PostgreSQL connection failed:', err.message);
     db = null;
   }
 }
@@ -79,46 +79,46 @@ async function initSchema() {
   console.log('🗂️  Initializing database schema...');
   const tableQueries = [
     `CREATE TABLE IF NOT EXISTS admins (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       username VARCHAR(100) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB`,
+    )`,
     `CREATE TABLE IF NOT EXISTS settings (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       setting_key VARCHAR(100) NOT NULL UNIQUE,
       setting_value TEXT,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB`,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
     `CREATE TABLE IF NOT EXISTS projects (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
       category VARCHAR(100),
       description TEXT,
       image_path VARCHAR(500),
       display_order INT DEFAULT 0,
       target_page VARCHAR(20) DEFAULT 'both',
-      is_active TINYINT(1) DEFAULT 1,
+      is_active SMALLINT DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB`,
+    )`,
     `CREATE TABLE IF NOT EXISTS services (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
       description TEXT,
       icon VARCHAR(100),
       display_order INT DEFAULT 0,
-      is_active TINYINT(1) DEFAULT 1
-    ) ENGINE=InnoDB`,
+      is_active SMALLINT DEFAULT 1
+    )`,
     `CREATE TABLE IF NOT EXISTS team_photos (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       name VARCHAR(255),
       role VARCHAR(255),
       image_path VARCHAR(500),
       display_order INT DEFAULT 0,
-      is_active TINYINT(1) DEFAULT 1
-    ) ENGINE=InnoDB`,
+      is_active SMALLINT DEFAULT 1
+    )`,
     `CREATE TABLE IF NOT EXISTS workshops (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
       description TEXT,
       learn_more TEXT,
@@ -126,14 +126,14 @@ async function initSchema() {
       business_knowledge TEXT,
       date_label VARCHAR(100),
       display_order INT DEFAULT 0,
-      is_active TINYINT(1) DEFAULT 1
-    ) ENGINE=InnoDB`,
+      is_active SMALLINT DEFAULT 1
+    )`,
     `CREATE TABLE IF NOT EXISTS about_content (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id SERIAL PRIMARY KEY,
       content_key VARCHAR(100) NOT NULL UNIQUE,
-      content_value LONGTEXT,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB`
+      content_value TEXT,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`
   ];
 
   try {
@@ -143,11 +143,15 @@ async function initSchema() {
     console.log('✅  Database schema initialized / verified');
 
     // Default settings seed
-    await db.query(`INSERT IGNORE INTO settings (setting_key, setting_value) VALUES
-      ('site_name', 'Onix Studio'),
-      ('hero_title', 'Architecture is Experience'),
-      ('hero_video_path', ''),
-      ('footer_text', '© 2026 Onix Studio. All rights reserved.')`);
+    await db.query(`
+      INSERT INTO settings (setting_key, setting_value) 
+      VALUES 
+        ('site_name', 'Onix Studio'),
+        ('hero_title', 'Architecture is Experience'),
+        ('hero_video_path', ''),
+        ('footer_text', '© 2026 Onix Studio. All rights reserved.')
+      ON CONFLICT (setting_key) DO NOTHING
+    `);
   } catch (err) {
     console.error('❌ Schema Init Error:', err.message);
   }
@@ -156,14 +160,14 @@ async function initSchema() {
 // ─── Seed Default Admin ───────────────────────────────────────────────────────
 async function seedAdmin() {
   try {
-    const [rows] = await db.query('SELECT id FROM admins LIMIT 1');
+    const { rows } = await db.query('SELECT id FROM admins LIMIT 1');
     if (rows.length === 0) {
-      const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'onix2024', 10);
+      const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'onix2026', 10);
       await db.query(
-        'INSERT INTO admins (username, password_hash) VALUES (?, ?)',
+        'INSERT INTO admins (username, password_hash) VALUES ($1, $2)',
         [process.env.ADMIN_USERNAME || 'admin', hash]
       );
-      console.log('✅  Default admin account created  →  user: admin  |  pass: onix2026');
+      console.log('✅  Default admin account created');
     }
   } catch (err) {
     console.error('Seed admin error:', err.message);
@@ -203,7 +207,7 @@ if (process.env.CLOUDINARY_URL) {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },   // 100 MB max
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif|webp|mp4|mov|avi|svg/;
     const ext = path.extname(file.originalname).toLowerCase().replace('.','');
@@ -215,28 +219,22 @@ const upload = multer({
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (req.session && req.session.adminId) return next();
-  res.status(401).json({ error: 'Unauthorized — please log in via /admin' });
+  res.status(401).json({ error: 'Unauthorized' });
 }
 
-// ─── DB Guard ─────────────────────────────────────────────────────────────────
 function requireDB(req, res, next) {
   if (!db) return res.status(503).json({ error: 'Database not connected' });
   next();
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ADMIN AUTH ROUTES
-//  POST /api/admin/login
-//  POST /api/admin/logout
-//  GET  /api/admin/check
+//  API ROUTES
 // ═══════════════════════════════════════════════════════════════
 
 app.post('/api/admin/login', requireDB, async (req, res) => {
   const { username, password } = req.body;
   try {
-    const [rows] = await db.query(
-      'SELECT * FROM admins WHERE username = ?', [username]
-    );
+    const { rows } = await db.query('SELECT * FROM admins WHERE username = $1', [username]);
     if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
 
     const valid = await bcrypt.compare(password, rows[0].password_hash);
@@ -262,15 +260,9 @@ app.get('/api/admin/check', (req, res) => {
     res.json({ loggedIn: false });
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  SETTINGS API
-//  GET  /api/settings          → returns all site settings
-//  POST /api/admin/settings    → update a setting (text or file)
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/api/settings', requireDB, async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT setting_key, setting_value FROM settings');
+    const { rows } = await db.query('SELECT setting_key, setting_value FROM settings');
     const result = {};
     rows.forEach(r => { result[r.setting_key] = r.setting_value; });
     res.json(result);
@@ -285,22 +277,13 @@ app.post('/api/admin/settings', requireAuth, requireDB, upload.single('file'), a
     let value = setting_value;
 
     if (req.file) {
-      if (req.file.path && req.file.path.startsWith('http')) {
-        value = req.file.path;
-      } else {
-        const pathMap = {
-          video   : '/videos/'           + req.file.filename,
-          logo    : '/images/'           + req.file.filename,
-          project : '/images/projects/'  + req.file.filename,
-          team    : '/images/team/'      + req.file.filename
-        };
-        value = pathMap[upload_type] || '/uploads/' + req.file.filename;
-      }
+      value = req.file.path.startsWith('http') ? req.file.path : 
+              (upload_type === 'video' ? '/videos/' : '/images/') + req.file.filename;
     }
 
     await db.query(
-      'INSERT INTO settings (setting_key, setting_value) VALUES (?,?) ON DUPLICATE KEY UPDATE setting_value=?',
-      [setting_key, value, value]
+      'INSERT INTO settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value',
+      [setting_key, value]
     );
     res.json({ success: true, value });
   } catch (err) {
@@ -308,29 +291,20 @@ app.post('/api/admin/settings', requireAuth, requireDB, upload.single('file'), a
   }
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  PROJECTS API  (Portfolio Gallery)
-//  GET    /api/projects              → list all active projects
-//  POST   /api/admin/projects        → add new project + image
-//  PUT    /api/admin/projects/:id    → edit project
-//  DELETE /api/admin/projects/:id    → soft-delete project
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/api/projects', requireDB, async (req, res) => {
   try {
     const { page } = req.query;
-    console.log(`[GET] /api/projects?page=${page}`);
     let sql = 'SELECT id, title, category, description, image_path, display_order, target_page FROM projects WHERE is_active = 1';
+    let params = [];
     
     if (page === 'home') {
-      sql += ' AND (target_page = "home" OR target_page = "both" OR target_page IS NULL)';
+      sql += ' AND (target_page = \'home\' OR target_page = \'both\' OR target_page IS NULL)';
     } else if (page === 'work') {
-      sql += ' AND (target_page = "work" OR target_page = "both" OR target_page IS NULL)';
+      sql += ' AND (target_page = \'work\' OR target_page = \'both\' OR target_page IS NULL)';
     }
 
     sql += ' ORDER BY display_order ASC, created_at DESC LIMIT 60';
-
-    const [rows] = await db.query(sql);
+    const { rows } = await db.query(sql, params);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -339,16 +313,13 @@ app.get('/api/projects', requireDB, async (req, res) => {
 
 app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
-    console.log('[POST] /api/admin/projects', req.body);
     const { title, category, description, display_order, target_page } = req.body;
-    if (!title) return res.status(400).json({ error: 'Title is required' });
-
     const image_path = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename) : '';
-    const [result] = await db.query(
-      'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES (?,?,?,?,?,?)',
+    const { rows } = await db.query(
+      'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
       [title, category || 'Architecture', description || '', image_path, display_order || 0, target_page || 'both']
     );
-    res.status(201).json({ success: true, id: result.insertId, image_path });
+    res.status(201).json({ success: true, id: rows[0].id, image_path });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -356,7 +327,6 @@ app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), 
 
 app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
-    console.log(`[PUT] /api/admin/projects/${req.params.id}`, req.body);
     const { title, category, description, display_order, is_active, target_page } = req.body;
     const updates = { title, category, description, display_order, is_active, target_page };
     if (req.file) updates.image_path = req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename;
@@ -365,10 +335,8 @@ app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'
     const values = keys.map(k => updates[k]);
     values.push(req.params.id);
 
-    await db.query(
-      `UPDATE projects SET ${keys.map(k => `${k}=?`).join(', ')} WHERE id=?`,
-      values
-    );
+    const setClause = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
+    await db.query(`UPDATE projects SET ${setClause} WHERE id=$${keys.length + 1}`, values);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -377,27 +345,16 @@ app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'
 
 app.delete('/api/admin/projects/:id', requireAuth, requireDB, async (req, res) => {
   try {
-    await db.query('UPDATE projects SET is_active=0 WHERE id=?', [req.params.id]);
+    await db.query('UPDATE projects SET is_active=0 WHERE id=$1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  SERVICES API  (Services Page)
-//  GET    /api/services              → list all active services
-//  POST   /api/admin/services        → add service
-//  PUT    /api/admin/services/:id    → edit service
-//  DELETE /api/admin/services/:id    → soft-delete service
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/api/services', requireDB, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT id, title, description, icon, display_order FROM services WHERE is_active=1 ORDER BY display_order ASC'
-    );
-    console.log(`[API] Services fetched: ${rows.length} items`);
+    const { rows } = await db.query('SELECT id, title, description, icon, display_order FROM services WHERE is_active=1 ORDER BY display_order ASC');
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -407,12 +364,11 @@ app.get('/api/services', requireDB, async (req, res) => {
 app.post('/api/admin/services', requireAuth, requireDB, async (req, res) => {
   try {
     const { title, description, icon, display_order } = req.body;
-    if (!title) return res.status(400).json({ error: 'Title is required' });
-    const [r] = await db.query(
-      'INSERT INTO services (title, description, icon, display_order) VALUES (?,?,?,?)',
+    const { rows } = await db.query(
+      'INSERT INTO services (title, description, icon, display_order) VALUES ($1,$2,$3,$4) RETURNING id',
       [title, description || '', icon || 'building', display_order || 0]
     );
-    res.status(201).json({ success: true, id: r.insertId });
+    res.status(201).json({ success: true, id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -422,7 +378,7 @@ app.put('/api/admin/services/:id', requireAuth, requireDB, async (req, res) => {
   try {
     const { title, description, icon, display_order, is_active } = req.body;
     await db.query(
-      'UPDATE services SET title=?, description=?, icon=?, display_order=?, is_active=? WHERE id=?',
+      'UPDATE services SET title=$1, description=$2, icon=$3, display_order=$4, is_active=$5 WHERE id=$6',
       [title, description, icon, display_order, is_active, req.params.id]
     );
     res.json({ success: true });
@@ -433,26 +389,16 @@ app.put('/api/admin/services/:id', requireAuth, requireDB, async (req, res) => {
 
 app.delete('/api/admin/services/:id', requireAuth, requireDB, async (req, res) => {
   try {
-    await db.query('UPDATE services SET is_active=0 WHERE id=?', [req.params.id]);
+    await db.query('UPDATE services SET is_active=0 WHERE id=$1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  TEAM API  (About Page — Instagram-style row)
-//  GET    /api/team              → list all active team members
-//  POST   /api/admin/team        → add team member + photo
-//  PUT    /api/admin/team/:id    → edit team member
-//  DELETE /api/admin/team/:id    → soft-delete
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/api/team', requireDB, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT id, name, role, image_path, display_order FROM team_photos WHERE is_active=1 ORDER BY display_order ASC'
-    );
+    const { rows } = await db.query('SELECT id, name, role, image_path, display_order FROM team_photos WHERE is_active=1 ORDER BY display_order ASC');
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -463,11 +409,11 @@ app.post('/api/admin/team', requireAuth, requireDB, upload.single('image'), asyn
   try {
     const { name, role, display_order } = req.body;
     const image_path = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/images/team/' + req.file.filename) : '';
-    const [r] = await db.query(
-      'INSERT INTO team_photos (name, role, image_path, display_order) VALUES (?,?,?,?)',
+    const { rows } = await db.query(
+      'INSERT INTO team_photos (name, role, image_path, display_order) VALUES ($1,$2,$3,$4) RETURNING id',
       [name || '', role || '', image_path, display_order || 0]
     );
-    res.status(201).json({ success: true, id: r.insertId, image_path });
+    res.status(201).json({ success: true, id: rows[0].id, image_path });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -481,10 +427,8 @@ app.put('/api/admin/team/:id', requireAuth, requireDB, upload.single('image'), a
 
     const keys   = Object.keys(updates).filter(k => updates[k] !== undefined);
     const values = [...keys.map(k => updates[k]), req.params.id];
-    await db.query(
-      `UPDATE team_photos SET ${keys.map(k => `${k}=?`).join(', ')} WHERE id=?`,
-      values
-    );
+    const setClause = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
+    await db.query(`UPDATE team_photos SET ${setClause} WHERE id=$${keys.length + 1}`, values);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -493,26 +437,16 @@ app.put('/api/admin/team/:id', requireAuth, requireDB, upload.single('image'), a
 
 app.delete('/api/admin/team/:id', requireAuth, requireDB, async (req, res) => {
   try {
-    await db.query('UPDATE team_photos SET is_active=0 WHERE id=?', [req.params.id]);
+    await db.query('UPDATE team_photos SET is_active=0 WHERE id=$1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  WORKSHOPS API  (Training Page)
-//  GET    /api/workshops              → list all active workshops
-//  POST   /api/admin/workshops        → add workshop
-//  PUT    /api/admin/workshops/:id    → edit workshop
-//  DELETE /api/admin/workshops/:id    → soft-delete
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/api/workshops', requireDB, async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT id, title, description, learn_more, our_speakers, business_knowledge, date_label, display_order FROM workshops WHERE is_active=1 ORDER BY display_order ASC'
-    );
+    const { rows } = await db.query('SELECT id, title, description, learn_more, our_speakers, business_knowledge, date_label, display_order FROM workshops WHERE is_active=1 ORDER BY display_order ASC');
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -522,12 +456,11 @@ app.get('/api/workshops', requireDB, async (req, res) => {
 app.post('/api/admin/workshops', requireAuth, requireDB, async (req, res) => {
   try {
     const { title, description, learn_more, our_speakers, business_knowledge, date_label, display_order } = req.body;
-    if (!title) return res.status(400).json({ error: 'Title is required' });
-    const [r] = await db.query(
-      'INSERT INTO workshops (title, description, learn_more, our_speakers, business_knowledge, date_label, display_order) VALUES (?,?,?,?,?,?,?)',
+    const { rows } = await db.query(
+      'INSERT INTO workshops (title, description, learn_more, our_speakers, business_knowledge, date_label, display_order) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
       [title, description || '', learn_more || '', our_speakers || '', business_knowledge || '', date_label || '', display_order || 0]
     );
-    res.status(201).json({ success: true, id: r.insertId });
+    res.status(201).json({ success: true, id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -537,7 +470,7 @@ app.put('/api/admin/workshops/:id', requireAuth, requireDB, async (req, res) => 
   try {
     const { title, description, learn_more, our_speakers, business_knowledge, date_label, display_order, is_active } = req.body;
     await db.query(
-      'UPDATE workshops SET title=?, description=?, learn_more=?, our_speakers=?, business_knowledge=?, date_label=?, display_order=?, is_active=? WHERE id=?',
+      'UPDATE workshops SET title=$1, description=$2, learn_more=$3, our_speakers=$4, business_knowledge=$5, date_label=$6, display_order=$7, is_active=$8 WHERE id=$9',
       [title, description, learn_more, our_speakers, business_knowledge, date_label, display_order, is_active, req.params.id]
     );
     res.json({ success: true });
@@ -548,22 +481,16 @@ app.put('/api/admin/workshops/:id', requireAuth, requireDB, async (req, res) => 
 
 app.delete('/api/admin/workshops/:id', requireAuth, requireDB, async (req, res) => {
   try {
-    await db.query('UPDATE workshops SET is_active=0 WHERE id=?', [req.params.id]);
+    await db.query('UPDATE workshops SET is_active=0 WHERE id=$1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  ABOUT CONTENT API  (About Page — narrative text)
-//  GET   /api/about              → get all about text
-//  POST  /api/admin/about        → update about text
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/api/about', requireDB, async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT content_key, content_value FROM about_content');
+    const { rows } = await db.query('SELECT content_key, content_value FROM about_content');
     const result = {};
     rows.forEach(r => { result[r.content_key] = r.content_value; });
     res.json(result);
@@ -576,19 +503,14 @@ app.post('/api/admin/about', requireAuth, requireDB, async (req, res) => {
   try {
     const { content_key, content_value } = req.body;
     await db.query(
-      'INSERT INTO about_content (content_key, content_value) VALUES (?,?) ON DUPLICATE KEY UPDATE content_value=?',
-      [content_key, content_value, content_value]
+      'INSERT INTO about_content (content_key, content_value) VALUES ($1,$2) ON CONFLICT (content_key) DO UPDATE SET content_value = EXCLUDED.content_value',
+      [content_key, content_value]
     );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ═══════════════════════════════════════════════════════════════
-//  API STATUS  (health check)
-//  GET /api/status
-// ═══════════════════════════════════════════════════════════════
 
 app.get('/api/status', (req, res) => {
   res.json({
@@ -599,26 +521,17 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  PAGE ROUTES  (serve HTML files)
-// ═══════════════════════════════════════════════════════════════
-
-const pub = (file) => (req, res) =>
-  res.sendFile(path.join(__dirname, 'public', file));
-
+const pub = (file) => (req, res) => res.sendFile(path.join(__dirname, 'public', file));
 app.get(['/admin', '/admin/*splat'], pub('admin.html'));
-app.get(['/about',    '/about.html'],    pub('about.html'));
+app.get(['/about', '/about.html'], pub('about.html'));
 app.get(['/services', '/services.html'], pub('services.html'));
 app.get(['/training', '/training.html'], pub('training.html'));
-app.get(['/work',     '/work.html'],     pub('work.html'));
-app.get(['/contact',  '/contact.html'],  pub('contact.html'));
+app.get(['/work', '/work.html'], pub('work.html'));
+app.get(['/contact', '/contact.html'], pub('contact.html'));
 app.get(['/', '/home.html', '/index.html', '/{*splat}'], pub('index.html'));
 
-// ─── Start Server ─────────────────────────────────────────────────────────────
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`\n🚀  Onix server  →  http://localhost:${PORT}`);
-    console.log(`🔧  Admin panel  →  http://localhost:${PORT}/admin`);
-    console.log(`📊  API status   →  http://localhost:${PORT}/api/status\n`);
   });
 });
