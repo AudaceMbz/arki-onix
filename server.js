@@ -9,18 +9,18 @@
 
 require('dotenv').config();
 
-const express    = require('express');
-const { Pool }   = require('pg');
-const multer     = require('multer');
-const session    = require('express-session');
-const bcrypt     = require('bcryptjs');
-const path       = require('path');
-const fs         = require('fs');
-const cors       = require('cors');
+const express = require('express');
+const { Pool } = require('pg');
+const multer = require('multer');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const path = require('path');
+const fs = require('fs');
+const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
@@ -35,10 +35,10 @@ app.use(session({
   secret: 'onix_robust_secret_2026',
   resave: true,
   saveUninitialized: true,
-  cookie: { 
-    secure: false, 
+  cookie: {
+    secure: false,
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000 
+    maxAge: 24 * 60 * 60 * 1000
   }
 }));
 
@@ -47,24 +47,24 @@ let db;
 
 async function connectDB() {
   try {
-    const connectionConfig = process.env.DATABASE_URL 
-      ? { 
-          connectionString: process.env.DATABASE_URL,
-          ssl: { rejectUnauthorized: false } 
-        }
+    const connectionConfig = process.env.DATABASE_URL
+      ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+      }
       : {
-          host     : process.env.DB_HOST     || 'localhost',
-          user     : process.env.DB_USER     || 'postgres',
-          password : process.env.DB_PASSWORD || '',
-          database : process.env.DB_NAME     || 'onix_db',
-          port     : process.env.DB_PORT     || 5432,
-        };
+        host: process.env.DB_HOST || 'localhost',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'onix_db',
+        port: process.env.DB_PORT || 5432,
+      };
 
     console.log('🔌 Connecting to PostgreSQL...');
     db = new Pool(connectionConfig);
     await db.query('SELECT 1');
     console.log('✅ PostgreSQL connected');
-    
+
     await initSchema();
     await seedAdmin();
   } catch (err) {
@@ -125,16 +125,16 @@ if (process.env.CLOUDINARY_URL) {
   cloudinary.config({ secure: true });
 }
 
-const storage = process.env.CLOUDINARY_URL 
-  ? new CloudinaryStorage({ cloudinary, params: { folder: 'onix_uploads', resource_type: 'auto', allowed_formats: ['jpeg','jpg','png','gif','webp','mp4','mov','avi','svg'] } })
+const storage = process.env.CLOUDINARY_URL
+  ? new CloudinaryStorage({ cloudinary, params: { folder: 'onix_uploads', resource_type: 'auto', allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'svg'] } })
   : multer.diskStorage({
-      destination: (req, file, cb) => {
-        const dest = { project: 'public/images/projects', team: 'public/images/team' }[req.body.upload_type] || 'public/uploads';
-        fs.mkdirSync(dest, { recursive: true });
-        cb(null, dest);
-      },
-      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-    });
+    destination: (req, file, cb) => {
+      const dest = { project: 'public/images/projects', team: 'public/images/team' }[req.body.upload_type] || 'public/uploads';
+      fs.mkdirSync(dest, { recursive: true });
+      cb(null, dest);
+    },
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+  });
 
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -152,8 +152,13 @@ function requireDB(req, res, next) {
 // Admin Auth
 app.post('/api/admin/login', requireDB, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM admins WHERE username = $1', [req.body.username]);
-    if (rows.length && await bcrypt.compare(req.body.password, rows[0].password_hash)) {
+    const username = (req.body.username || '').trim();
+    const password = req.body.password || '';
+    
+    // Case-insensitive user lookup for mobile convenience
+    const { rows } = await db.query('SELECT * FROM admins WHERE LOWER(username) = LOWER($1)', [username]);
+    
+    if (rows.length && await bcrypt.compare(password, rows[0].password_hash)) {
       req.session.adminId = rows[0].id;
       req.session.username = rows[0].username;
       return res.json({ success: true, username: rows[0].username });
@@ -199,9 +204,9 @@ app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), 
       [title, category || '', description || '', img, parseInt(display_order) || 0, target_page || 'both']
     );
     res.status(201).json({ success: true, id: rows[0].id, image_path: img });
-  } catch (err) { 
+  } catch (err) {
     console.error('❌ Project save error:', err.message);
-    res.status(500).json({ error: err.message }); 
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -211,8 +216,8 @@ app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'
     const upd = { title, category, description, target_page, display_order: parseInt(display_order) || 0, is_active: parseInt(is_active) || 1 };
     if (req.file) upd.image_path = req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename;
     const keys = Object.keys(upd);
-    const set = keys.map((k, i) => `${k}=$${i+1}`).join(', ');
-    await db.query(`UPDATE projects SET ${set} WHERE id=$${keys.length+1}`, [...keys.map(k=>upd[k]), req.params.id]);
+    const set = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
+    await db.query(`UPDATE projects SET ${set} WHERE id=$${keys.length + 1}`, [...keys.map(k => upd[k]), req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -223,13 +228,13 @@ app.delete('/api/admin/projects/:id', requireAuth, requireDB, async (req, res) =
 });
 
 // Generic routes for others
-app.get('/api/services', requireDB, async (req,res) => { const { rows } = await db.query('SELECT * FROM services WHERE is_active=1 ORDER BY display_order'); res.json(rows); });
-app.get('/api/team', requireDB, async (req,res) => { const { rows } = await db.query('SELECT * FROM team_photos WHERE is_active=1 ORDER BY display_order'); res.json(rows); });
-app.get('/api/about', requireDB, async (req,res) => { 
-  const { rows } = await db.query('SELECT * FROM about_content'); 
-  const o = {}; rows.forEach(r => o[r.content_key] = r.content_value); res.json(o); 
+app.get('/api/services', requireDB, async (req, res) => { const { rows } = await db.query('SELECT * FROM services WHERE is_active=1 ORDER BY display_order'); res.json(rows); });
+app.get('/api/team', requireDB, async (req, res) => { const { rows } = await db.query('SELECT * FROM team_photos WHERE is_active=1 ORDER BY display_order'); res.json(rows); });
+app.get('/api/about', requireDB, async (req, res) => {
+  const { rows } = await db.query('SELECT * FROM about_content');
+  const o = {}; rows.forEach(r => o[r.content_key] = r.content_value); res.json(o);
 });
-app.post('/api/admin/about', requireAuth, requireDB, async (req,res) => {
+app.post('/api/admin/about', requireAuth, requireDB, async (req, res) => {
   await db.query('INSERT INTO about_content (content_key, content_value) VALUES ($1,$2) ON CONFLICT (content_key) DO UPDATE SET content_value=EXCLUDED.content_value', [req.body.content_key, req.body.content_value]);
   res.json({ success: true });
 });
@@ -237,19 +242,19 @@ app.post('/api/admin/about', requireAuth, requireDB, async (req,res) => {
 // ─── ERROR HANDLER (CRITICAL) ────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('💥 GLOBAL ERROR:', err);
-  res.status(500).json({ 
-    error: 'Internal Server Error', 
+  res.status(500).json({
+    error: 'Internal Server Error',
     message: err.message,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack 
+    stack: process.env.NODE_ENV === 'production' ? null : err.stack
   });
 });
 
 // ─── SPA Static ──────────────────────────────────────────────────────────────
 const pub = (f) => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
-app.get(['/admin','/admin/*splat'], pub('admin.html'));
-app.get(['/about','/about.html'], pub('about.html'));
-app.get(['/work','/work.html'], pub('work.html'));
-app.get(['/','/index.html','/*splat'], pub('index.html'));
+app.get(['/admin', '/admin/*splat'], pub('admin.html'));
+app.get(['/about', '/about.html'], pub('about.html'));
+app.get(['/work', '/work.html'], pub('work.html'));
+app.get(['/', '/index.html', '/*splat'], pub('index.html'));
 
 connectDB().then(() => {
   app.listen(PORT, () => console.log(`🚀 Onix server at port ${PORT}`));

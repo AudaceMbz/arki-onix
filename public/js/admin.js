@@ -89,9 +89,9 @@
   async function loadDashboard() {
     try {
       const [proj, svc, team, work] = await Promise.all([
-        api('GET', '/api/projects'), 
+        api('GET', '/api/projects'),
         api('GET', '/api/services'),
-        api('GET', '/api/team'), 
+        api('GET', '/api/team'),
         api('GET', '/api/workshops')
       ]);
       setText('stat-projects', proj.length);
