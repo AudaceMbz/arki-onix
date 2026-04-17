@@ -398,13 +398,43 @@ h4 {
 /* ─── Hero ───────────────────────────────────────────────────────────────── */
 /* ─── Hero Showcase (New Landing) ─────────────────────────────────────────── */
 .hero-showcase {
-  padding-top: calc(var(--nav-h) + 60px);
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   background: var(--bg);
 }
 
+.hero-bg-video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  z-index: 1;
+}
+
+.hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7));
+  z-index: 2;
+}
+
 .showcase-content {
+  position: relative;
+  z-index: 3;
   text-align: center;
-  padding: 0 24px 80px;
+  padding: 0 24px;
   max-width: 1000px;
   margin: 0 auto;
 }
@@ -447,6 +477,31 @@ h4 {
   justify-content: center;
   margin-top: 40px;
   flex-wrap: wrap;
+}
+
+/* Brand Film Section Styles */
+.brand-film-section {
+  padding: 80px 80px;
+  background: var(--bg);
+}
+
+.brand-film-container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  margin: 40px auto 0;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+}
+
+.brand-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .hero-scroll-hint {

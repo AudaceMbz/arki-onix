@@ -101,28 +101,28 @@
       }
 
 
-      // Brand Film Video
-      const vid = document.getElementById('about-brand-video-src');
-      const brandVid = document.getElementById('about-brand-video');
-      if (vid && brandVid && s.hero_video_path) {
-        vid.src = s.hero_video_path;
-        brandVid.load();
-        brandVid.muted = true; // Essential for autoplay
-
-        // Ensure properties are set before playing
-        brandVid.loop = true;
-
-        // Try playing
-        const playPromise = brandVid.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => {
-            console.warn("Autoplay prevented:", e);
-            // Show controls if autoplay fails so user can click play
-            brandVid.controls = true;
-          });
+      // Brand Film Video (About Us Only)
+      const videoTargets = ['about-brand-video'];
+      videoTargets.forEach(id => {
+        const v = document.getElementById(id);
+        if (v && s.hero_video_path) {
+          v.src = s.hero_video_path;
+          v.muted = true;
+          v.loop = true;
+          v.playsInline = true;
+          v.load();
+          
+          const playPromise = v.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(() => {
+              v.controls = true; 
+            });
+          }
         }
-      }
-    } catch (e) { }
+      });
+    } catch (e) {
+      console.error("Error loading settings:", e);
+    }
   }
 
   // ─── About ───────────────────────────────────────────────────
