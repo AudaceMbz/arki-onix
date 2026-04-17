@@ -146,6 +146,7 @@ async function initSchema() {
     await db.query(`INSERT IGNORE INTO settings (setting_key, setting_value) VALUES
       ('site_name', 'Onix Studio'),
       ('hero_title', 'Architecture is Experience'),
+      ('hero_video_path', ''),
       ('footer_text', '© 2026 Onix Studio. All rights reserved.')`);
   } catch (err) {
     console.error('❌ Schema Init Error:', err.message);

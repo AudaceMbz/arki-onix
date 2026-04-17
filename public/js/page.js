@@ -35,6 +35,9 @@
     if (document.getElementById('work-gallery')) loadWorkGallery();
     if (document.getElementById('contact-form')) initContactForm();
     if (document.getElementById('lightbox')) initLightbox();
+
+    // Ensure elements in viewport are revealed immediately
+    setTimeout(triggerReveal, 100);
   });
 
   // ─── Theme ──────────────────────────────────────────────────
@@ -97,14 +100,27 @@
         if (ft) ft.textContent = s.footer_text;
       }
 
+
       // Brand Film Video
       const vid = document.getElementById('about-brand-video-src');
       const brandVid = document.getElementById('about-brand-video');
       if (vid && brandVid && s.hero_video_path) {
         vid.src = s.hero_video_path;
         brandVid.load();
-        brandVid.muted = true; // Ensure muted for autoplay
-        brandVid.play().catch(e => console.warn("Autoplay prevented:", e));
+        brandVid.muted = true; // Essential for autoplay
+
+        // Ensure properties are set before playing
+        brandVid.loop = true;
+
+        // Try playing
+        const playPromise = brandVid.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            console.warn("Autoplay prevented:", e);
+            // Show controls if autoplay fails so user can click play
+            brandVid.controls = true;
+          });
+        }
       }
     } catch (e) { }
   }

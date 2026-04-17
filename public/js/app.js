@@ -21,6 +21,9 @@
     initScrollReveal();
     initScrollNav();
     loadSettings();
+
+    // Ensure elements in viewport are revealed immediately
+    setTimeout(triggerReveal, 100);
   });
 
   // ─── Theme ──────────────────────────────────────────────
@@ -155,16 +158,8 @@
       const s = await fetchJSON('/api/settings');
 
       // Hero
-      
-      // About Brand Video
-      const aboutVidSrc = document.getElementById('about-brand-video-src');
-      const aboutVid = document.getElementById('about-brand-video');
-      if (aboutVidSrc && aboutVid && s.hero_video_path) {
-        aboutVidSrc.src = s.hero_video_path;
-        aboutVid.load();
-        aboutVid.muted = true; // Ensure muted for autoplay
-        aboutVid.play().catch(e => console.warn("Autoplay prevented:", e));
-      }
+
+
 
       if (s.hero_title) {
         const parts = s.hero_title.split(' ');
@@ -184,6 +179,16 @@
         document.querySelectorAll('.logo-text, .footer-logo-text').forEach(txt => {
           txt.style.display = 'none';
         });
+      }
+
+      // Brand Film Video
+      const vid = document.getElementById('about-brand-video-src');
+      const brandVid = document.getElementById('about-brand-video');
+      if (vid && brandVid && s.hero_video_path) {
+        vid.src = s.hero_video_path;
+        brandVid.load();
+        brandVid.muted = true;
+        brandVid.play().catch(e => console.warn("Autoplay prevented:", e));
       }
 
     } catch (e) {
@@ -272,7 +277,7 @@
 
     const countToLoad = Math.min(workPageSize, remaining);
     const nextBatch = filteredProjects.slice(workVisibleCount, workVisibleCount + countToLoad);
-    
+
     nextBatch.forEach((p, i) => {
       const idx = workVisibleCount + i;
       el.appendChild(createGalleryItem(p, idx, filteredProjects));
@@ -542,21 +547,41 @@
 
     if (fb) fb.textContent = '';
 
-    form.addEventListener('submit', async e => {
+    form.addEventListener('submit', e => {
       e.preventDefault();
       const btn = document.getElementById('contact-submit');
-      btn.textContent = 'Sending...';
+
+      const val = id => document.getElementById(id)?.value || '';
+      const name = val('contact-name');
+      const email = val('contact-email');
+      const subject = val('contact-subject');
+      const phone = val('contact-phone');
+      const msg = val('contact-message');
+
+      let body = `Hi ONIX STUDIO,%0A%0A` +
+        `New Inquiry from Website:%0A` +
+        `-------------------------%0A`;
+
+      if (name) body += `Name: ${name}%0A`;
+      if (email) body += `Email: ${email}%0A`;
+      if (phone) body += `Phone: ${phone}%0A`;
+      if (subject) body += `Subject: ${subject}%0A`;
+      body += `%0AMessage:%0A${msg}`;
+
+      const waUrl = `https://wa.me/250790128174?text=${body}`;
+
+      btn.textContent = 'Opening WhatsApp...';
       btn.disabled = true;
 
-      await new Promise(r => setTimeout(r, 1000));
-
-      fb.textContent = '✓ Message sent. We\'ll be in touch soon.';
-      fb.style.color = '#5ac98a';
-      form.reset();
-      btn.textContent = 'Send Message';
-      btn.disabled = false;
-
-      setTimeout(() => { fb.textContent = ''; }, 5000);
+      setTimeout(() => {
+        window.open(waUrl, '_blank');
+        btn.textContent = 'Send Message';
+        btn.disabled = false;
+        if (fb) {
+          fb.textContent = '✓ Opening WhatsApp chat...';
+          fb.style.color = '#25D366';
+        }
+      }, 800);
     });
   }
 
