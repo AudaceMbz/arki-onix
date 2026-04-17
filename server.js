@@ -32,11 +32,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'onix_secret',
-  resave: false,
-  saveUninitialized: false,
+  secret: 'onix_robust_secret_2026',
+  resave: true,
+  saveUninitialized: true,
   cookie: { 
-    secure: false, // Compatibility for testing
+    secure: false, 
+    sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000 
   }
 }));

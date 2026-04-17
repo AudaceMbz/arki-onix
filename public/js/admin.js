@@ -446,6 +446,11 @@
 
     try {
       const res = await fetch(url, { method, headers, body });
+      if (res.status === 401) {
+        alert('Session expired or server restarted. Please log in again.');
+        location.reload();
+        return;
+      }
       if (!res.ok) throw new Error(await res.text());
       fb.textContent = '✓ Saved successfully.';
       fb.className = 'admin-feedback success';
@@ -495,6 +500,11 @@
       body: data ? JSON.stringify(data) : undefined
     };
     const res = await fetch(url, opts);
+    if (res.status === 401) {
+      alert('Session expired or server restarted. Please log in again.');
+      location.reload();
+      throw new Error('Unauthorized');
+    }
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(txt);
