@@ -77,26 +77,28 @@
   }
 
   function loadPanel(name) {
-    if (name === 'projects')  loadProjects();
-    if (name === 'services')  loadServicesAdmin();
-    if (name === 'team')      loadTeamAdmin();
+    if (name === 'projects') loadProjects();
+    if (name === 'services') loadServicesAdmin();
+    if (name === 'team') loadTeamAdmin();
     if (name === 'workshops') loadWorkshopsAdmin();
-    if (name === 'about')     loadAboutAdmin();
-    if (name === 'settings')  loadSettingsAdmin();
+    if (name === 'about') loadAboutAdmin();
+    if (name === 'settings') loadSettingsAdmin();
   }
 
   // ─── Dashboard ───────────────────────────────────────────
   async function loadDashboard() {
     try {
       const [proj, svc, team, work] = await Promise.all([
-        api('GET', '/api/projects'), api('GET', '/api/services'),
-        api('GET', '/api/team'),     api('GET', '/api/workshops')
+        api('GET', '/api/projects'), 
+        api('GET', '/api/services'),
+        api('GET', '/api/team'), 
+        api('GET', '/api/workshops')
       ]);
       setText('stat-projects', proj.length);
       setText('stat-services', svc.length);
       setText('stat-team', team.length);
       setText('stat-workshops', work.length);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // ─── Settings ────────────────────────────────────────────
@@ -107,7 +109,7 @@
       setValue('set-hero-title', s.hero_title || '');
       setValue('set-hero-sub', s.hero_subtitle || '');
       setValue('set-footer-text', s.footer_text || '');
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function initSettingsForms() {
@@ -168,10 +170,10 @@
     document.getElementById('btn-save-text').addEventListener('click', async () => {
       try {
         await Promise.all([
-          api('POST', '/api/admin/settings', { setting_key: 'site_name',     setting_value: getValue('set-site-name') }),
-          api('POST', '/api/admin/settings', { setting_key: 'hero_title',    setting_value: getValue('set-hero-title') }),
+          api('POST', '/api/admin/settings', { setting_key: 'site_name', setting_value: getValue('set-site-name') }),
+          api('POST', '/api/admin/settings', { setting_key: 'hero_title', setting_value: getValue('set-hero-title') }),
           api('POST', '/api/admin/settings', { setting_key: 'hero_subtitle', setting_value: getValue('set-hero-sub') }),
-          api('POST', '/api/admin/settings', { setting_key: 'footer_text',   setting_value: getValue('set-footer-text') }),
+          api('POST', '/api/admin/settings', { setting_key: 'footer_text', setting_value: getValue('set-footer-text') }),
         ]);
         showFeedback('fb-text', '✓ Text settings saved.', 'success');
       } catch (e) { showFeedback('fb-text', 'Save failed.', 'error'); }
@@ -222,7 +224,7 @@
         row.innerHTML = `
           <div class="item-info">
             <h4>${s.title}</h4>
-            <span>${s.description.substring(0, 80)}...</span>
+            <span>${(s.description || '').substring(0, 80)}...</span>
           </div>
           <div class="item-actions">
             <button class="btn-edit" onclick="adminEdit('service',${s.id})">Edit</button>
@@ -230,7 +232,7 @@
           </div>`;
         el.appendChild(row);
       });
-    } catch (e) {}
+    } catch (e) { }
   }
 
   document.getElementById('btn-add-service').addEventListener('click', () => openModal('add', 'service'));
@@ -257,7 +259,7 @@
           </div>`;
         el.appendChild(row);
       });
-    } catch (e) {}
+    } catch (e) { }
   }
 
   document.getElementById('btn-add-team').addEventListener('click', () => openModal('add', 'team'));
@@ -283,7 +285,7 @@
           </div>`;
         el.appendChild(row);
       });
-    } catch (e) {}
+    } catch (e) { }
   }
 
   document.getElementById('btn-add-workshop').addEventListener('click', () => openModal('add', 'workshop'));
@@ -294,12 +296,12 @@
       const data = await api('GET', '/api/about');
       setValue('about-narrative-input', data.narrative || '');
       setValue('about-mission-input', data.mission || '');
-    } catch (e) {}
+    } catch (e) { }
     document.getElementById('btn-save-about').onclick = async () => {
       try {
         await Promise.all([
           api('POST', '/api/admin/about', { content_key: 'narrative', content_value: getValue('about-narrative-input') }),
-          api('POST', '/api/admin/about', { content_key: 'mission',   content_value: getValue('about-mission-input') }),
+          api('POST', '/api/admin/about', { content_key: 'mission', content_value: getValue('about-mission-input') }),
         ]);
         showFeedback('fb-about', '✓ About content saved.', 'success');
       } catch (e) { showFeedback('fb-about', 'Save failed.', 'error'); }
@@ -316,7 +318,7 @@
 
     document.getElementById('modal-form').addEventListener('submit', async e => {
       e.preventDefault();
-      await handleModalSubmit();
+      await handleModalSubmit(e);
     });
   }
 
@@ -332,7 +334,7 @@
     service: [
       { id: 'f-title', label: 'Service Title', type: 'text', required: true, key: 'title' },
       { id: 'f-desc', label: 'Description', type: 'textarea', key: 'description' },
-      { id: 'f-icon', label: 'Icon', type: 'select', key: 'icon', options: ['building','layout','leaf','award','tool'] },
+      { id: 'f-icon', label: 'Icon', type: 'select', key: 'icon', options: ['building', 'layout', 'leaf', 'award', 'tool'] },
       { id: 'f-order', label: 'Display Order', type: 'number', key: 'display_order' },
     ],
     team: [
@@ -400,7 +402,7 @@
     modalMode = null; modalEntity = null; editingId = null;
   }
 
-  async function handleModalSubmit() {
+  async function handleModalSubmit(e) {
     const fb = document.getElementById('modal-feedback');
     const fields = MODAL_FIELDS[modalEntity] || [];
     const hasFile = fields.some(f => f.type === 'file');
@@ -430,12 +432,17 @@
       headers['Content-Type'] = 'application/json';
     }
 
-    console.log('Admin: Sending project data:', hasFile ? Object.fromEntries(body) : JSON.parse(body));
-
     const endpointMap = { project: 'projects', service: 'services', team: 'team', workshop: 'workshops' };
     const ep = endpointMap[modalEntity];
     const url = modalMode === 'edit' ? `/api/admin/${ep}/${editingId}` : `/api/admin/${ep}`;
     const method = modalMode === 'edit' ? 'PUT' : 'POST';
+
+    const submitBtn = document.getElementById('modal-save-btn') || e.target.querySelector('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.originalText = submitBtn.textContent;
+      submitBtn.textContent = 'Saving...';
+    }
 
     try {
       const res = await fetch(url, { method, headers, body });
@@ -449,33 +456,35 @@
         loadDashboard();
       }, 800);
     } catch (e) {
-      fb.textContent = 'Error: ' + e.message;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitBtn.originalText || 'Save';
+      }
+      fb.textContent = 'Save failed: ' + e.message;
       fb.className = 'admin-feedback error';
       fb.style.display = 'block';
     }
   }
 
-  // ─── Global edit/delete (called from inline onclick) ────
   window.adminEdit = async (entity, id) => {
-    const endpointMap = { project: 'projects', service: 'services', team: 'team', workshop: 'workshops' };
-    const ep = endpointMap[entity];
     try {
-      // Fetch all, find by id
+      const epMap = { project: 'projects', service: 'services', team: 'team', workshop: 'workshops' };
+      const ep = epMap[entity];
       const items = await api('GET', `/api/${ep}`);
       const item = items.find(i => i.id === id);
       if (item) openModal('edit', entity, item);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   window.adminDel = async (entity, id) => {
-    if (!confirm(`Delete this ${entity}? This cannot be undone.`)) return;
-    const endpointMap = { project: 'projects', service: 'services', team: 'team', workshop: 'workshops' };
-    const ep = endpointMap[entity];
+    if (!confirm(`Are you sure you want to delete this ${entity}?`)) return;
     try {
-      await fetch(`/api/admin/${ep}/${id}`, { method: 'DELETE' });
+      const epMap = { project: 'projects', service: 'services', team: 'team', workshop: 'workshops' };
+      const ep = epMap[entity];
+      await api('DELETE', `/api/admin/${ep}/${id}`);
       loadPanel(currentPanel);
       loadDashboard();
-    } catch (e) { alert('Delete failed.'); }
+    } catch (e) { alert('Delete failed: ' + e.message); }
   };
 
   // ─── Utilities ───────────────────────────────────────────

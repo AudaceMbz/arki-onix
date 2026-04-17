@@ -59,6 +59,7 @@ async function connectDB() {
           port     : process.env.DB_PORT     || 5432,
         };
 
+    console.log('🔌  Attempting to connect to PostgreSQL...');
     db = new Pool(connectionConfig);
     
     // Test connection
@@ -177,9 +178,7 @@ async function seedAdmin() {
 // ─── Multer — File Upload Setup ───────────────────────────────────────────────
 let storage;
 if (process.env.CLOUDINARY_URL) {
-  cloudinary.config({
-    cloudinary_url: process.env.CLOUDINARY_URL
-  });
+  cloudinary.config({ secure: true });
   storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
@@ -188,7 +187,7 @@ if (process.env.CLOUDINARY_URL) {
       allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'svg']
     }
   });
-  console.log('☁️  Cloudinary storage configured');
+  console.log('☁️  Cloudinary storage ready');
 } else {
   storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -288,6 +287,7 @@ app.get('/api/projects', requireDB, async (req, res) => {
 
 app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
+    console.log('[POST] Adding Project:', req.body.title);
     const { title, category, description, display_order, target_page } = req.body;
     const order = parseInt(display_order) || 0;
     const img   = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename) : '';
@@ -295,13 +295,18 @@ app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), 
       'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
       [title, category || '', description || '', img, order, target_page || 'both']
     );
+    console.log('✅ Project saved successfully with ID:', rows[0].id);
     res.status(201).json({ success: true, id: rows[0].id, image_path: img });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error('❌ Project save error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('[PUT] Updating Project:', id);
     const { title, category, description, display_order, is_active, target_page } = req.body;
     const updates = { title, category, description, target_page };
     if (display_order !== undefined) updates.display_order = parseInt(display_order) || 0;
@@ -315,7 +320,10 @@ app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'
     const setClause = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
     await db.query(`UPDATE projects SET ${setClause} WHERE id=$${keys.length + 1}`, values);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error('❌ Project update error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.delete('/api/admin/projects/:id', requireAuth, requireDB, async (req, res) => {
