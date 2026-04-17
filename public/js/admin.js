@@ -412,16 +412,24 @@
 
     if (hasFile) {
       body = new FormData();
-      fields.forEach(f => {
+      for (const f of fields) {
         const el = document.getElementById(f.id);
-        if (!el) return;
+        if (!el) continue;
         if (f.type === 'file') {
-          body.append('upload_type', modalEntity);
-          if (el.files[0]) body.append('image', el.files[0]);
+          const file = el.files[0];
+          if (file) {
+            // Cloudinary Free limit is ~10MB
+            if (file.size > 10 * 1024 * 1024) {
+              alert(`File "${file.name}" is too large! Max size is 10MB. (Your file: ${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+              return;
+            }
+            body.append('upload_type', modalEntity);
+            body.append('image', file);
+          }
         } else {
           body.append(f.key, el.value);
         }
-      });
+      }
     } else {
       const obj = {};
       fields.forEach(f => {
