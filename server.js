@@ -1,15 +1,13 @@
 'use strict';
 // ═══════════════════════════════════════════════════════════════
-//  ONIX ARCHITECTURE — Node.js Backend Server (PostgreSQL Version)
-//  Language : JavaScript (Node.js)
-//  Database : PostgreSQL (via pg)
-//  Auth     : express-session + bcryptjs
-//  Uploads  : multer + cloudinary
+//  ONIX ARCHITECTURE — Multi-DB Backend (MySQL + PostgreSQL)
+//  Automatically detects environment (Render PG vs AlwaysData MySQL)
 // ═══════════════════════════════════════════════════════════════
 
 require('dotenv').config();
 
 const express = require('express');
+const mysql = require('mysql2/promise');
 const { Pool } = require('pg');
 const multer = require('multer');
 const session = require('express-session');
@@ -42,89 +40,120 @@ app.use(session({
   }
 }));
 
-// ─── PostgreSQL Connection Pool ───────────────────────────────────────────────
-let db;
+// ─── Database Abstraction Layer ───────────────────────────────────────────────
+let pool;
+let dbType = 'mysql'; 
 
 async function connectDB() {
   try {
-    const connectionConfig = process.env.DATABASE_URL
-      ? {
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false }
-      }
-      : {
+    if (process.env.DATABASE_URL || process.env.DB_TYPE === 'postgres') {
+      dbType = 'postgres';
+      console.log('🔌 Detected PostgreSQL environment');
+      const config = process.env.DATABASE_URL 
+        ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+        : {
+            host: process.env.DB_HOST || 'localhost',
+            user: process.env.DB_USER || 'postgres',
+            password: process.env.DB_PASSWORD || '',
+            database: process.env.DB_NAME || 'onix_db',
+            port: process.env.DB_PORT || 5432,
+          };
+      pool = new Pool(config);
+      await pool.query('SELECT 1');
+      console.log('✅ PostgreSQL connected');
+    } else {
+      dbType = 'mysql';
+      console.log(`🔌 Detected MySQL environment (${process.env.DB_HOST || 'localhost'})`);
+      const config = {
         host: process.env.DB_HOST || 'localhost',
-        user: process.env.DB_USER || 'postgres',
+        user: process.env.DB_USER || 'root',
         password: process.env.DB_PASSWORD || '',
         database: process.env.DB_NAME || 'onix_db',
-        port: process.env.DB_PORT || 5432,
+        port: process.env.DB_PORT || 3306,
+        waitForConnections: true,
+        connectionLimit: 10,
       };
-
-    console.log('🔌 Connecting to PostgreSQL...');
-    db = new Pool(connectionConfig);
-    await db.query('SELECT 1');
-    console.log('✅ PostgreSQL connected');
-
+      pool = mysql.createPool(config);
+      await pool.query('SELECT 1');
+      console.log('✅ MySQL connected');
+    }
     await initSchema();
     await seedAdmin();
   } catch (err) {
     console.error('❌ Database connection failed:', err.message);
-    db = null;
+    pool = null;
   }
 }
 
-// ─── Initialize Database Schema & Migrations ──────────────────────────────────
+async function query(sql, params = []) {
+  if (!pool) throw new Error('Database not connected');
+  if (dbType === 'postgres') {
+    let i = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++i}`);
+    const res = await pool.query(pgSql, params);
+    return [res.rows, res]; 
+  } else {
+    return await pool.query(sql, params);
+  }
+}
+
 async function initSchema() {
-  console.log('🗂️ Verifying database schema...');
+  console.log(`🗂️ Verifying ${dbType} schema...`);
   try {
-    // 1. Create Tables
-    await db.query(`CREATE TABLE IF NOT EXISTS admins (id SERIAL PRIMARY KEY, username VARCHAR(100) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS settings (id SERIAL PRIMARY KEY, setting_key VARCHAR(100) NOT NULL UNIQUE, setting_value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS projects (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, category VARCHAR(100), description TEXT, image_path VARCHAR(500), display_order INT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS services (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, icon VARCHAR(100), display_order INT DEFAULT 0, is_active SMALLINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS team_photos (id SERIAL PRIMARY KEY, name VARCHAR(255), role VARCHAR(255), image_path VARCHAR(500), display_order INT DEFAULT 0, is_active SMALLINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS workshops (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, learn_more TEXT, our_speakers TEXT, business_knowledge TEXT, date_label VARCHAR(100), display_order INT DEFAULT 0, is_active SMALLINT DEFAULT 1)`);
-    await db.query(`CREATE TABLE IF NOT EXISTS about_content (id SERIAL PRIMARY KEY, content_key VARCHAR(100) NOT NULL UNIQUE, content_value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
-
-    // 2. MIGRATIONS: Add missing columns if they don't exist
-    const migrateColumns = [
-      { table: 'projects', column: 'target_page', type: "VARCHAR(20) DEFAULT 'both'" },
-      { table: 'projects', column: 'is_active', type: 'SMALLINT DEFAULT 1' }
-    ];
-
-    for (const m of migrateColumns) {
-      const { rows } = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`, [m.table, m.column]);
-      if (rows.length === 0) {
-        console.log(`🚀 Migrating: Adding ${m.column} to ${m.table}...`);
-        await db.query(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.type}`);
+    const isPG = dbType === 'postgres';
+    const tables = [
+      { name: 'admins', sql: isPG 
+        ? `CREATE TABLE IF NOT EXISTS admins (id SERIAL PRIMARY KEY, username VARCHAR(100) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+        : `CREATE TABLE IF NOT EXISTS admins (id INT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(100) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB` 
+      },
+      { name: 'settings', sql: isPG
+        ? `CREATE TABLE IF NOT EXISTS settings (id SERIAL PRIMARY KEY, setting_key VARCHAR(100) NOT NULL UNIQUE, setting_value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+        : `CREATE TABLE IF NOT EXISTS settings (id INT AUTO_INCREMENT PRIMARY KEY, setting_key VARCHAR(100) NOT NULL UNIQUE, setting_value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB`
+      },
+      { name: 'projects', sql: isPG
+        ? `CREATE TABLE IF NOT EXISTS projects (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, category VARCHAR(100), description TEXT, image_path VARCHAR(500), display_order INT DEFAULT 0, target_page VARCHAR(20) DEFAULT 'both', is_active SMALLINT DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+        : `CREATE TABLE IF NOT EXISTS projects (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) NOT NULL, category VARCHAR(100), description TEXT, image_path VARCHAR(500), display_order INT DEFAULT 0, target_page VARCHAR(20) DEFAULT 'both', is_active TINYINT(1) DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB`
+      },
+      { name: 'services', sql: isPG
+        ? `CREATE TABLE IF NOT EXISTS services (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, icon VARCHAR(100), display_order INT DEFAULT 0, is_active SMALLINT DEFAULT 1)`
+        : `CREATE TABLE IF NOT EXISTS services (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, icon VARCHAR(100), display_order INT DEFAULT 0, is_active TINYINT(1) DEFAULT 1) ENGINE=InnoDB`
+      },
+      { name: 'team_photos', sql: isPG
+        ? `CREATE TABLE IF NOT EXISTS team_photos (id SERIAL PRIMARY KEY, name VARCHAR(255), role VARCHAR(255), image_path VARCHAR(500), display_order INT DEFAULT 0, is_active SMALLINT DEFAULT 1)`
+        : `CREATE TABLE IF NOT EXISTS team_photos (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), role VARCHAR(255), image_path VARCHAR(500), display_order INT DEFAULT 0, is_active TINYINT(1) DEFAULT 1) ENGINE=InnoDB`
+      },
+      { name: 'workshops', sql: isPG
+        ? `CREATE TABLE IF NOT EXISTS workshops (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, learn_more TEXT, our_speakers TEXT, business_knowledge TEXT, date_label VARCHAR(100), display_order INT DEFAULT 0, is_active SMALLINT DEFAULT 1)`
+        : `CREATE TABLE IF NOT EXISTS workshops (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, learn_more TEXT, our_speakers TEXT, business_knowledge TEXT, date_label VARCHAR(100), display_order INT DEFAULT 0, is_active TINYINT(1) DEFAULT 1) ENGINE=InnoDB`
+      },
+      { name: 'about_content', sql: isPG
+        ? `CREATE TABLE IF NOT EXISTS about_content (id SERIAL PRIMARY KEY, content_key VARCHAR(100) NOT NULL UNIQUE, content_value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+        : `CREATE TABLE IF NOT EXISTS about_content (id INT AUTO_INCREMENT PRIMARY KEY, content_key VARCHAR(100) NOT NULL UNIQUE, content_value LONGTEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB`
       }
-    }
-
+    ];
+    for (const t of tables) await query(t.sql);
     console.log('✅ Database schema verified');
 
-    // Seed defaults
-    await db.query(`INSERT INTO settings (setting_key, setting_value) VALUES ('site_name','Onix Studio'),('hero_title','Architecture is Experience'),('hero_video_path',''),('footer_text','© 2026 Onix Studio') ON CONFLICT (setting_key) DO NOTHING`);
-  } catch (err) {
-    console.error('❌ Schema Verification Error:', err.message);
-  }
+    const seedSql = isPG
+      ? `INSERT INTO settings (setting_key, setting_value) VALUES ($1,$2) ON CONFLICT (setting_key) DO NOTHING`
+      : `INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (?,?)`;
+    const defaults = [['site_name','Onix Studio'], ['hero_title','Architecture is Experience'], ['hero_video_path',''], ['footer_text','© 2026 Onix Studio']];
+    for (const d of defaults) await (isPG ? pool.query(seedSql, d) : pool.query(seedSql, d));
+  } catch (err) { console.error('❌ Schema Verification Error:', err.message); }
 }
 
 async function seedAdmin() {
   try {
-    const { rows } = await db.query('SELECT id FROM admins LIMIT 1');
+    const [rows] = await query('SELECT id FROM admins LIMIT 1');
     if (!rows.length) {
       const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'onix2026', 10);
-      await db.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [process.env.ADMIN_USERNAME || 'admin', hash]);
+      await query('INSERT INTO admins (username, password_hash) VALUES (?, ?)', [process.env.ADMIN_USERNAME || 'admin', hash]);
       console.log('✅ Default admin created');
     }
   } catch (err) { console.error('Seed error:', err.message); }
 }
 
-// ─── Multer & Cloudinary ──────────────────────────────────────────────────────
-if (process.env.CLOUDINARY_URL) {
-  cloudinary.config({ secure: true });
-}
-
+if (process.env.CLOUDINARY_URL) cloudinary.config({ secure: true });
 const storage = process.env.CLOUDINARY_URL
   ? new CloudinaryStorage({ cloudinary, params: { folder: 'onix_uploads', resource_type: 'auto', allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'svg'] } })
   : multer.diskStorage({
@@ -135,29 +164,22 @@ const storage = process.env.CLOUDINARY_URL
     },
     filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
   });
-
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (req.session && req.session.adminId) return next();
   res.status(401).json({ error: 'Unauthorized' });
 }
-
 function requireDB(req, res, next) {
-  if (!db) return res.status(503).json({ error: 'Database not connected' });
+  if (!pool) return res.status(503).json({ error: 'Database not connected' });
   next();
 }
 
-// Admin Auth
 app.post('/api/admin/login', requireDB, async (req, res) => {
   try {
     const username = (req.body.username || '').trim();
     const password = req.body.password || '';
-    
-    // Case-insensitive user lookup for mobile convenience
-    const { rows } = await db.query('SELECT * FROM admins WHERE LOWER(username) = LOWER($1)', [username]);
-    
+    const [rows] = await query('SELECT * FROM admins WHERE LOWER(username) = LOWER(?)', [username]);
     if (rows.length && await bcrypt.compare(password, rows[0].password_hash)) {
       req.session.adminId = rows[0].id;
       req.session.username = rows[0].username;
@@ -170,86 +192,99 @@ app.post('/api/admin/login', requireDB, async (req, res) => {
 app.post('/api/admin/logout', (req, res) => { req.session.destroy(); res.json({ success: true }); });
 app.get('/api/admin/check', (req, res) => res.json({ loggedIn: !!(req.session && req.session.adminId), username: req.session ? req.session.username : '' }));
 
-// API
 app.get('/api/settings', requireDB, async (req, res) => {
-  const { rows } = await db.query('SELECT * FROM settings');
-  const s = {}; rows.forEach(r => s[r.setting_key] = r.setting_value);
-  res.json(s);
+  try {
+    const [rows] = await query('SELECT * FROM settings');
+    const s = {}; rows.forEach(r => s[r.setting_key] = r.setting_value);
+    res.json(s);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/admin/settings', requireAuth, requireDB, upload.single('file'), async (req, res) => {
   try {
     let val = req.body.setting_value;
-    if (req.file) val = req.file.path.startsWith('http') ? req.file.path : '/images/' + req.file.filename;
-    await db.query('INSERT INTO settings (setting_key, setting_value) VALUES ($1,$2) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value', [req.body.setting_key, val]);
+    if (req.file) {
+      if (req.file.path.startsWith('http')) {
+        val = req.file.path;
+      } else {
+        const relPath = req.file.path.replace(/\\/g, '/');
+        val = '/' + relPath.replace(/^public\//, '');
+      }
+    }
+    const sql = dbType === 'postgres'
+      ? 'INSERT INTO settings (setting_key, setting_value) VALUES ($1,$2) ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value'
+      : 'INSERT INTO settings (setting_key, setting_value) VALUES (?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)';
+    await (dbType === 'postgres' ? pool.query(sql, [req.body.setting_key, val]) : query(sql, [req.body.setting_key, val]));
     res.json({ success: true, value: val });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/projects', requireDB, async (req, res) => {
-  const { page } = req.query;
-  let sql = 'SELECT * FROM projects WHERE is_active = 1';
-  if (page === 'home') sql += " AND (target_page = 'home' OR target_page = 'both')";
-  else if (page === 'work') sql += " AND (target_page = 'work' OR target_page = 'both')";
-  sql += ' ORDER BY display_order ASC, created_at DESC LIMIT 100';
-  const { rows } = await db.query(sql); res.json(rows);
+  try {
+    const { page } = req.query;
+    let sql = 'SELECT * FROM projects WHERE is_active = 1';
+    if (page === 'home') sql += " AND (target_page = 'home' OR target_page = 'both')";
+    else if (page === 'work') sql += " AND (target_page = 'work' OR target_page = 'both')";
+    sql += ' ORDER BY display_order ASC, created_at DESC LIMIT 100';
+    const [rows] = await query(sql); res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/admin/projects', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
     const { title, category, description, display_order, target_page } = req.body;
-    const img = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename) : '';
-    const { rows } = await db.query(
-      'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-      [title, category || '', description || '', img, parseInt(display_order) || 0, target_page || 'both']
-    );
-    res.status(201).json({ success: true, id: rows[0].id, image_path: img });
-  } catch (err) {
-    console.error('❌ Project save error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+    const img = req.file ? (req.file.path.startsWith('http') ? req.file.path : '/' + req.file.path.replace(/\\/g, '/').replace(/^public\//, '')) : '';
+    const sql = dbType === 'postgres'
+      ? 'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES (?,?,?,?,?,?) RETURNING id'
+      : 'INSERT INTO projects (title, category, description, image_path, display_order, target_page) VALUES (?,?,?,?,?,?)';
+    const [rows, result] = await query(sql, [title, category || '', description || '', img, parseInt(display_order) || 0, target_page || 'both']);
+    const id = dbType === 'postgres' ? rows[0].id : result.insertId;
+    res.status(201).json({ success: true, id, image_path: img });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/admin/projects/:id', requireAuth, requireDB, upload.single('image'), async (req, res) => {
   try {
     const { title, category, description, display_order, is_active, target_page } = req.body;
     const upd = { title, category, description, target_page, display_order: parseInt(display_order) || 0, is_active: parseInt(is_active) || 1 };
-    if (req.file) upd.image_path = req.file.path.startsWith('http') ? req.file.path : '/images/projects/' + req.file.filename;
+    if (req.file) upd.image_path = req.file.path.startsWith('http') ? req.file.path : '/' + req.file.path.replace(/\\/g, '/').replace(/^public\//, '');
     const keys = Object.keys(upd);
-    const set = keys.map((k, i) => `${k}=$${i + 1}`).join(', ');
-    await db.query(`UPDATE projects SET ${set} WHERE id=$${keys.length + 1}`, [...keys.map(k => upd[k]), req.params.id]);
+    const set = keys.map(k => `${k}=?`).join(', ');
+    await query(`UPDATE projects SET ${set} WHERE id=?`, [...keys.map(k => upd[k]), req.params.id]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/admin/projects/:id', requireAuth, requireDB, async (req, res) => {
-  await db.query('UPDATE projects SET is_active=0 WHERE id=$1', [req.params.id]);
-  res.json({ success: true });
+  try {
+    await query('UPDATE projects SET is_active=0 WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Generic routes for others
-app.get('/api/services', requireDB, async (req, res) => { const { rows } = await db.query('SELECT * FROM services WHERE is_active=1 ORDER BY display_order'); res.json(rows); });
-app.get('/api/team', requireDB, async (req, res) => { const { rows } = await db.query('SELECT * FROM team_photos WHERE is_active=1 ORDER BY display_order'); res.json(rows); });
+app.get('/api/services', requireDB, async (req, res) => { try { const [rows] = await query('SELECT * FROM services WHERE is_active=1 ORDER BY display_order'); res.json(rows); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/team', requireDB, async (req, res) => { try { const [rows] = await query('SELECT * FROM team_photos WHERE is_active=1 ORDER BY display_order'); res.json(rows); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.get('/api/about', requireDB, async (req, res) => {
-  const { rows } = await db.query('SELECT * FROM about_content');
-  const o = {}; rows.forEach(r => o[r.content_key] = r.content_value); res.json(o);
+  try {
+    const [rows] = await query('SELECT * FROM about_content');
+    const o = {}; rows.forEach(r => o[r.content_key] = r.content_value); res.json(o);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/admin/about', requireAuth, requireDB, async (req, res) => {
-  await db.query('INSERT INTO about_content (content_key, content_value) VALUES ($1,$2) ON CONFLICT (content_key) DO UPDATE SET content_value=EXCLUDED.content_value', [req.body.content_key, req.body.content_value]);
-  res.json({ success: true });
+  try {
+    const sql = dbType === 'postgres'
+      ? 'INSERT INTO about_content (content_key, content_value) VALUES ($1,$2) ON CONFLICT (content_key) DO UPDATE SET content_value=EXCLUDED.content_value'
+      : 'INSERT INTO about_content (content_key, content_value) VALUES (?,?) ON DUPLICATE KEY UPDATE content_value=VALUES(content_value)';
+    await (dbType === 'postgres' ? pool.query(sql, [req.body.content_key, req.body.content_value]) : query(sql, [req.body.content_key, req.body.content_value]));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── ERROR HANDLER (CRITICAL) ────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('💥 GLOBAL ERROR:', err);
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: err.message,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack
-  });
+  res.status(500).json({ error: 'Internal Server Error', message: err.message });
 });
 
-// ─── SPA Static ──────────────────────────────────────────────────────────────
 const pub = (f) => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
 app.get(['/admin', '/admin/*splat'], pub('admin.html'));
 app.get(['/about', '/about.html'], pub('about.html'));
@@ -257,5 +292,5 @@ app.get(['/work', '/work.html'], pub('work.html'));
 app.get(['/', '/index.html', '/*splat'], pub('index.html'));
 
 connectDB().then(() => {
-  app.listen(PORT, () => console.log(`🚀 Onix server at port ${PORT}`));
+  app.listen(PORT, () => console.log(`🚀 Onix server at port ${PORT} [${dbType.toUpperCase()}]`));
 });

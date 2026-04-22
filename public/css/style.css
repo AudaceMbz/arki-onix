@@ -464,7 +464,7 @@ h4 {
   background: #000;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
 .brand-video {
@@ -1608,6 +1608,14 @@ h4 {
   .page-hero {
     padding: calc(var(--nav-h) + 40px) 40px 60px;
   }
+
+  .hero-showcase {
+    padding-top: calc(var(--nav-h) + 40px);
+  }
+
+  .brand-film-section {
+    padding: 80px 40px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1687,8 +1695,21 @@ h4 {
   }
 
   .about-narrative-section,
-  .about-philosophy {
+  .about-philosophy,
+  .brand-film-section {
     padding: 60px 24px;
+  }
+
+  .brand-film-container {
+    margin-top: 32px;
+  }
+
+  .hero-showcase {
+    padding-top: calc(var(--nav-h) + 30px);
+  }
+
+  .showcase-content {
+    padding: 0 24px 48px;
   }
 
   .services-cta {
@@ -1710,7 +1731,7 @@ h4 {
   }
 
   .contact-layout {
-    padding: 60px 24px;
+    padding: 40px 24px 80px;
   }
 
   .page-hero {
@@ -1737,7 +1758,18 @@ h4 {
 
   .hero-actions {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .hero-actions .btn-primary,
+  .hero-actions .btn-ghost {
+    justify-content: center;
+  }
+
+  .logo-text {
+    font-size: 1.2rem;
+    letter-spacing: 0.15em;
   }
 }
 

@@ -63,7 +63,29 @@
       link.addEventListener('click', () => {
         const panel = link.dataset.panel;
         if (panel) switchPanel(panel);
+        // Auto-close sidebar on mobile after clicking
+        if (window.innerWidth <= 640) {
+          document.getElementById('admin-sidebar').classList.remove('open');
+        }
       });
+    });
+
+    const sidebar = document.getElementById('admin-sidebar');
+    const toggle = document.getElementById('sidebar-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebar.classList.toggle('open');
+      });
+    }
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 640 && sidebar.classList.contains('open')) {
+        if (!sidebar.contains(e.target) && e.target !== toggle) {
+          sidebar.classList.remove('open');
+        }
+      }
     });
   }
 
