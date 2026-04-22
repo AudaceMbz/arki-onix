@@ -413,8 +413,8 @@
       fieldsEl.appendChild(div);
     });
 
-    // Make form 2-column where possible
-    fieldsEl.style.gridTemplateColumns = '1fr 1fr';
+    // Make form 2-column on desktop, 1-column on mobile
+    fieldsEl.style.gridTemplateColumns = window.innerWidth <= 640 ? '1fr' : '1fr 1fr';
 
     document.getElementById('admin-modal').classList.add('open');
   }
