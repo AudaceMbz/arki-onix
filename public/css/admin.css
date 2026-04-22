@@ -220,7 +220,8 @@ a { color: inherit; text-decoration: none; }
   padding: 10px;
   margin-left: -10px;
   margin-right: 12px;
-  color: var(--text-2);
+  color: var(--accent);
+  background: transparent;
 }
 
 .sidebar-toggle span {
